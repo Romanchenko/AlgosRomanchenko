@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-const size_t kMaxSize = (1 << 20);
+size_t kMaxSize = (1 << 10);
 
 template<class KeyType, class ValueType, class Hash = std::hash<KeyType>>
 class HashMap {
@@ -21,6 +21,18 @@ class HashMap {
 
         size_t local_hash(const KeyType& value) const {
             return hasher_(value) % kMaxSize;
+        }
+
+        void resize() {
+            kMaxSize *= 2;
+            size_ = 0;
+            std::list<HashPair> data_copy = data_;
+            data_.clear();
+            borders_.clear();
+            borders_.resize(kMaxSize, ListIterator(nullptr));
+            for (auto element : data_copy) {
+                insert(element);
+            }
         }
 
     public:
@@ -134,6 +146,9 @@ class HashMap {
             data_.insert(it, element);
             --borders_[key_hash];
             ++size_;
+            if (size_ * 2 >= kMaxSize) {
+                resize();
+            }
         }
 
         void erase(const KeyType& key) {
