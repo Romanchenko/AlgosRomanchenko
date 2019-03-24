@@ -5,7 +5,6 @@
 #include <utility>
 #include <vector>
 
-size_t kMaxSize = (1 << 10);
 
 template<class KeyType, class ValueType, class Hash = std::hash<KeyType>>
 class HashMap {
@@ -13,49 +12,30 @@ class HashMap {
     typedef typename std::list<HashPair>::iterator ListIterator;
     typedef typename std::list<HashPair>::const_iterator ConstListIterator;
 
-    private:
-        size_t size_;
-        Hash hasher_;
-        std::vector<ListIterator> borders_;
-        std::list<HashPair> data_;
-
-        size_t local_hash(const KeyType& value) const {
-            return hasher_(value) % kMaxSize;
-        }
-
-        void resize() {
-            kMaxSize *= 2;
-            size_ = 0;
-            std::list<HashPair> data_copy = data_;
-            data_.clear();
-            borders_.clear();
-            borders_.resize(kMaxSize, ListIterator(nullptr));
-            for (auto element : data_copy) {
-                insert(element);
-            }
-        }
-
     public:
         HashMap(Hash hash_func = Hash())
             : size_(0)
+            , capacity_(init_capacity_)
             , hasher_(hash_func)
-            , borders_(kMaxSize, ListIterator(nullptr))
+            , borders_(init_capacity_, ListIterator(nullptr))
         {}
 
         HashMap(const HashMap& other, Hash hash_func = Hash())
             : size_(0)
+            , capacity_(init_capacity_)
             , hasher_(hash_func)
-            , borders_(kMaxSize, ListIterator(nullptr)) {
+            , borders_(init_capacity_, ListIterator(nullptr)) {
             for (auto element : other) {
                 insert(element);
             }
         }
 
-        template<class Inputiterator>
-        HashMap(Inputiterator In, Inputiterator Out, Hash hash_func = Hash())
+        template<class InputIterator>
+        HashMap(InputIterator In, InputIterator Out, Hash hash_func = Hash())
             : size_(0)
+            , capacity_(init_capacity_)
             , hasher_(hash_func)
-            , borders_(kMaxSize, ListIterator(nullptr)) {
+            , borders_(init_capacity_, ListIterator(nullptr)) {
             while (In != Out) {
                 insert(*In);
                 ++In;
@@ -65,17 +45,20 @@ class HashMap {
         HashMap(const std::initializer_list<const HashPair>& init_list,
                 Hash hash_func = Hash())
             : size_(0)
+            , capacity_(init_capacity_)
             , hasher_(hash_func)
-            , borders_(kMaxSize, ListIterator(nullptr)) {
-            for (auto element : init_list) {
+            , borders_(init_capacity_, ListIterator(nullptr)) {
+            for (const auto element : init_list) {
                 insert(element);
             }
         }
 
         HashMap& operator = (const HashMap& other) {
-            HashMap tmp_hashmap(other.begin(), other.end());
+            if (&other == this) {
+                return *this;
+            }
             clear();
-            for (auto element : tmp_hashmap) {
+            for (auto element : other) {
                 insert(element);
             }
             return *this;
@@ -102,8 +85,8 @@ class HashMap {
                 return end();
             }
             ListIterator it = borders_[key_hash];
-            while (it != data_.end() && local_hash((*it).first) == key_hash) {
-                if ((*it).first == key) {
+            while (it != data_.end() && local_hash(it->first) == key_hash) {
+                if (it->first == key) {
                     return iterator(it);
                 }
                 ++it;
@@ -117,8 +100,8 @@ class HashMap {
                 return end();
             }
             ListIterator it = borders_[key_hash];
-            while (it != data_.end() && local_hash((*it).first) == key_hash) {
-                if ((*it).first == key) {
+            while (it != data_.end() && local_hash(it->first) == key_hash) {
+                if (it->first == key) {
                     return const_iterator(it);
                 }
                 ++it;
@@ -126,29 +109,8 @@ class HashMap {
             return end();
         }
 
-
         void insert(const HashPair& element) {
-            if (find(element.first) != end()) {
-                return;
-            }
-            size_t key_hash = local_hash(element.first);
-            if (data_.empty()) {
-                data_.push_back(element);
-                borders_[key_hash] = data_.end();
-                ++size_;
-                --borders_[key_hash];
-                return;
-            }
-            if (borders_[key_hash] == ListIterator(nullptr)) {
-                borders_[key_hash] = data_.end();
-            }
-            ListIterator it = borders_[key_hash];
-            data_.insert(it, element);
-            --borders_[key_hash];
-            ++size_;
-            if (size_ * 2 >= kMaxSize) {
-                resize();
-            }
+            insert_it(element);
         }
 
         void erase(const KeyType& key) {
@@ -157,19 +119,19 @@ class HashMap {
             if (it == ListIterator(nullptr)) {
                 return;
             }
-            if ((*it).first == key) {
-                ListIterator it2 = it;
-                ++it2;
+            if (it->first == key) {
+                ListIterator it_next = it;
+                ++it_next;
                 data_.erase(it);
                 --size_;
-                if (it2 == data_.end() || local_hash((*it2).first) != key_hash) {
+                if (it_next == data_.end() || local_hash(it_next->first) != key_hash) {
                     borders_[key_hash] = ListIterator(nullptr);
                 } else {
-                    borders_[key_hash] = it2;
+                    borders_[key_hash] = it_next;
                 }
             } else {
-                while (it != data_.end() && local_hash((*it).first) == key_hash) {
-                    if ((*it).first == key) {
+                while (it != data_.end() && local_hash(it->first) == key_hash) {
+                    if (it->first == key) {
                         data_.erase(it);
                         --size_;
                         break;
@@ -188,12 +150,8 @@ class HashMap {
         }
 
         ValueType& operator[] (const KeyType& key) {
-            iterator it = find(key);
-            if (it == end()) {
-                insert(std::make_pair(key, ValueType()));
-                it = find(key);
-            }
-            return (*it).second;
+            iterator it = insert_it(std::make_pair(key, ValueType()));
+            return it->second;
         }
 
         const ValueType& at(const KeyType& key) const {
@@ -201,7 +159,7 @@ class HashMap {
             if (it == end()) {
                 throw std::out_of_range("");
             }
-            return (*it).second;
+            return it->second;
         }
 
         iterator begin() {
@@ -237,7 +195,6 @@ class HashMap {
                     ptr = other.ptr;
                     return *this;
                 }
-
 
                 iterator& operator ++() {
                     ++ptr;
@@ -346,4 +303,54 @@ class HashMap {
                     return ptr != other.ptr;
                 }
         };
+
+        private:
+            size_t size_;
+            size_t capacity_;
+            constexpr static size_t init_capacity_ = (1 << 10);
+            Hash hasher_;
+            std::vector<ListIterator> borders_;
+            std::list<HashPair> data_;
+
+            size_t local_hash(const KeyType& value) const {
+                return hasher_(value) % capacity_;
+            }
+
+            void rehash() {
+                capacity_ *= 2;
+                size_ = 0;
+                std::list<HashPair> data_copy = data_;
+                data_.clear();
+                borders_.clear();
+                borders_.resize(capacity_, ListIterator(nullptr));
+                for (auto element : data_copy) {
+                    insert(element);
+                }
+            }
+
+            iterator insert_it(const HashPair& element) {
+                iterator found = find(element.first);
+                if (found != end()) {
+                    return found;
+                }
+                if ((size_ + 1) * 2 >= capacity_) {
+                    rehash();
+                }
+                size_t key_hash = local_hash(element.first);
+                if (data_.empty()) {
+                    data_.push_back(element);
+                    borders_[key_hash] = data_.end();
+                    ++size_;
+                    --borders_[key_hash];
+                    return borders_[key_hash];
+                }
+                if (borders_[key_hash] == ListIterator(nullptr)) {
+                    borders_[key_hash] = data_.end();
+                }
+                ListIterator it = borders_[key_hash];
+                data_.insert(it, element);
+                --borders_[key_hash];
+                ++size_;
+                return borders_[key_hash];
+            }
 };
