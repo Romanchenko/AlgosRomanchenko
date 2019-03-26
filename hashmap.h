@@ -13,19 +13,21 @@ class HashMap {
     typedef typename std::list<HashPair>::const_iterator ConstListIterator;
 
     public:
+        constexpr static size_t kInitCapacity_ = (1 << 10);
+
         HashMap(Hash hash_func = Hash())
             : size_(0)
-            , capacity_(init_capacity_)
+            , capacity_(kInitCapacity_)
             , hasher_(hash_func)
-            , borders_(init_capacity_, ListIterator(nullptr))
+            , borders_(kInitCapacity_, ListIterator(nullptr))
         {}
 
         HashMap(const HashMap& other, Hash hash_func = Hash())
             : size_(0)
-            , capacity_(init_capacity_)
+            , capacity_(kInitCapacity_)
             , hasher_(hash_func)
-            , borders_(init_capacity_, ListIterator(nullptr)) {
-            for (auto element : other) {
+            , borders_(kInitCapacity_, ListIterator(nullptr)) {
+            for (const auto& element : other) {
                 insert(element);
             }
         }
@@ -33,9 +35,9 @@ class HashMap {
         template<class InputIterator>
         HashMap(InputIterator In, InputIterator Out, Hash hash_func = Hash())
             : size_(0)
-            , capacity_(init_capacity_)
+            , capacity_(kInitCapacity_)
             , hasher_(hash_func)
-            , borders_(init_capacity_, ListIterator(nullptr)) {
+            , borders_(kInitCapacity_, ListIterator(nullptr)) {
             while (In != Out) {
                 insert(*In);
                 ++In;
@@ -45,10 +47,10 @@ class HashMap {
         HashMap(const std::initializer_list<const HashPair>& init_list,
                 Hash hash_func = Hash())
             : size_(0)
-            , capacity_(init_capacity_)
+            , capacity_(kInitCapacity_)
             , hasher_(hash_func)
-            , borders_(init_capacity_, ListIterator(nullptr)) {
-            for (const auto element : init_list) {
+            , borders_(kInitCapacity_, ListIterator(nullptr)) {
+            for (const auto& element : init_list) {
                 insert(element);
             }
         }
@@ -58,7 +60,7 @@ class HashMap {
                 return *this;
             }
             clear();
-            for (auto element : other) {
+            for (const auto& element : other) {
                 insert(element);
             }
             return *this;
@@ -143,7 +145,7 @@ class HashMap {
 
         void clear() {
             size_ = 0;
-            for (auto & it : data_) {
+            for (const auto& it : data_) {
                 borders_[local_hash(it.first)] = ListIterator(nullptr);
             }
             data_.clear();
@@ -307,13 +309,17 @@ class HashMap {
         private:
             size_t size_;
             size_t capacity_;
-            constexpr static size_t init_capacity_ = (1 << 10);
+
             Hash hasher_;
             std::vector<ListIterator> borders_;
             std::list<HashPair> data_;
 
             size_t local_hash(const KeyType& value) const {
                 return hasher_(value) % capacity_;
+            }
+
+            bool need_rehash() {
+                return (size_ + 1) * 2 >= capacity_;
             }
 
             void rehash() {
@@ -323,7 +329,7 @@ class HashMap {
                 data_.clear();
                 borders_.clear();
                 borders_.resize(capacity_, ListIterator(nullptr));
-                for (auto element : data_copy) {
+                for (const auto& element : data_copy) {
                     insert(element);
                 }
             }
@@ -333,7 +339,7 @@ class HashMap {
                 if (found != end()) {
                     return found;
                 }
-                if ((size_ + 1) * 2 >= capacity_) {
+                if (need_rehash()) {
                     rehash();
                 }
                 size_t key_hash = local_hash(element.first);
