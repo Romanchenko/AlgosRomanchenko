@@ -1,3 +1,12 @@
+// Реализация AVL-дерева по статье
+// https://neerc.ifmo.ru/wiki/index.php?title=%D0%90%D0%92%D0%9B-%D0%B4%D0%B5%D1%80%D0%B5%D0%B2%D0%BE
+// Время работы операций:
+// begin, end, size, empty --------------- O(1)
+// find, insert, erase, lower_bound ------ O(log n)
+// ++ , -- для итераторов ---------------- O(n) для n вызовов
+// clear --------------------------------- O(n)
+// в пояснениях к поворотам за h(v) будем принимать высоту поддерева с корнем в v
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -51,6 +60,10 @@ template<class ValueType> class Set {
         }
 
         Node* root;
+        Node* most_left;
+        // обновлять most_left будем только при вставке и удалении элементов,
+        // так как этот указатель зависит только от набора элементов множества
+        // и не будет меняться при балансировках
 
         std::pair<Node*, Node*> find_(const ValueType& value) const {
             if (root == nullptr) {
@@ -81,6 +94,21 @@ template<class ValueType> class Set {
         }
 
         Node* small_left_rotation(Node* v) {
+            //      p                         p
+            //       \                         \
+            //        v                         u
+            //       / \     ========>         / \
+            //      /   \                     /   \
+            //  v.lf     u                   v     u.rg
+            //          / \                 / \
+            //      u.lf   u.rg         v.lf   u.lf
+            //
+            // Проверяем высоты
+            // h'(v) = max(h'(v.lf), h'(u.lf)) + 1 = max(h(v.lf), h(u.lf)) + 1
+            // diff(v) == -2 => h(v.lf) = h(u) - 2
+            // diff(u) == 0  => h(u.lf) = h(u.rg) = h(u) - 1 = h(v.lf) + 2 - 1 = h(v.lf) + 1 => h'(v) = h'(u.lf) + 1 = h'(u.rg) + 1
+            // diff(u) == -1 => h(u.lf) = h(u.rg) - 1 = h(u) - 2 = h(v.lf) => h'(v) = h(u.lf) + 1 = h(u.rg) = h'(u.rg)
+
             Node* u = v->right;
             Node* p = v->parent;
             u->parent = p;
@@ -105,6 +133,22 @@ template<class ValueType> class Set {
         }
 
         Node* small_right_rotation(Node* v) {
+            //     p                  p
+            //      \                  \
+            //       v                  u
+            //      / \               /   \
+            //     /   \             /     \
+            //    u    v.rg ====>   u.lf    v
+            //  /   \                      / \
+            // u.lf  u.rg               u.rg  v.rg
+            //
+            // так как diff(v) = 2 и diff(u) == 1 или 0 (см условие в rebalance),
+            // то у v обязательно есть левый сын. diff(v) == 2 => h(u) = 2 + h(v.rg)
+            // Проверим, что происходит с высотами поддеревьев.
+            // h'(v) = max(h'(u.rg) + h'(v.rg) + 1 = max(h(u.rg), h(v.rg)) + 1 = max(h(u.rg), h(u) - 2) + 1 = h(u.rg) + 1 = h'(u.rg) + 1
+            // diff(u) = 0 => h'(u.lf) = h(u.lf) = h(u.rg) = h'(u.rg) = h'(v) - 1
+            // diff(u) = 1 => h'(u.lf) = h(u.lf) = h(u.rg) + 1 = h'(u.rg) + 1 = h'(v)
+
             Node* u = v->left;
             Node* p = v->parent;
             u->parent = p;
@@ -128,6 +172,26 @@ template<class ValueType> class Set {
         }
 
         Node* big_left_rotation(Node* v) {
+            //      p                              p
+            //       \                              \
+            //        v                              w
+            //       / \                           /   \
+            //      /   \       ========>         /     \
+            //     /     \                       /       \
+            //   v.lf     u                     v         u
+            //          /   \                  / \       / \
+            //         w    u.rg           v.lf  w.lf  w.rg u.rg
+            //
+            // Проверим высоты
+            // h'(v) = max(h'(v.lf), h'(w.lf)) + 1 = max(h(v.lf), h(w.lf)) + 1
+            // h'(u) = max(h'(u.rg), h'(w.rg)) + 1 = max(h(u.rg), h(w.rg)) + 1
+            // Пусть h(w.lf) = 1 + h(w.rg) = h(w) - 1
+            // h(w.lf) = h(w) - 1 = h(u) - 2 = h(v.lf)
+            // h(w.rg) = h(w) - 2 = h(u) - 3 = h(u.rg) - 1
+            // h'(v) = h(w.lf) + 1 = h(u) - 2 + 1 = h(v) - 2
+            // h'(u) = h(u.rg) + 1 = h(u) - 1 = h(v) - 2
+            // h'(v) = h'(u)
+
             Node* u = v->right;
             Node* w = u->left;
             Node* p = v->parent;
@@ -159,6 +223,27 @@ template<class ValueType> class Set {
         }
 
         Node* big_right_rotation(Node* v) {
+            //     p                  p
+            //      \                  \
+            //       v                  w
+            //      / \               /   \
+            //     /   \             /     \
+            //    u    v.rg ====>   u        v
+            //  /   \              / \      /  \
+            // u.lf  w         u.lf  w.lf w.rg v.rg
+            //
+            // так как diff(v) = 2 и diff(u) == -1 (см условие в rebalance),
+            // то у v обязательно есть левый сын, а у него в свою очередь
+            // обязательно есть правый сын.
+            // Проверим высоты
+            // h'(u) = max(h'(u.lf), h'(w.lf)) + 1 = max(h(u.lf), h(w.lf)) + 1
+            // h'(v) = max(h'(w.rg), h'(v.rg)) + 1 = max(h(w.rg), h(v.rg)) + 1
+            // Пусть h(w.lf) = 1 + h(w.rg) = h(w) - 1 , остальные случаи - аналогичный разбор
+            // h(w.lf) = h(w) - 1 = h(u) - 2 = h(v.rg)
+            // h'(u) = h(w) - 1 + 1 = h(w) = h(w.lf) + 1
+            // h'(v) = max(h(w)- 2, h(v.rg)) + 1 = h(v.rg) + 1
+            // h'(u) = h'(v)
+
             Node* u = v->left;
             Node* w = u->right;
             Node* p = v->parent;
@@ -194,25 +279,31 @@ template<class ValueType> class Set {
                 return nullptr;
             }
             int diff = get_diff(v);
-            if (diff == -2) { // высота правого поддерева больше, чем левого, делаем один из левых поворотов
+            if (diff == -2) {
+                // высота правого поддерева больше, чем левого, делаем один из левых поворотов
                 if (get_diff(v->right) == -1 || get_diff(v->right) == 0) {
+                    // у правого сына достаточно глубокое поддерево, чтобы сделать его корнем при малом повороте
                     if (v == root) {
                         return root = small_left_rotation(v);
                     }
                     return small_left_rotation(v);
                 } else {
+                    // иначе левое поддерево правого сына более глубокое, чем правое, и надо делать большое вращение
                     if (v == root) {
                         return root = big_left_rotation(v);
                     }
                     return big_left_rotation(v);
                 }
-            } else {  // высота левого поддерева больше, чем правого, делаем один из правых поворотов
+            } else {
+                // высота левого поддерева больше, чем правого, делаем один из правых поворотов
                 if (get_diff(v->left) == 1 || get_diff(v->left) == 0) {
+                    // левое поддерево левого сына глубже правого, поэтому можно делать малый поворот
                     if (v == root) {
                         return root = small_right_rotation(v);
                     }
                     return small_right_rotation(v);
                 } else {
+                    // иначе правое поддерево левого сына глубже, чем левое, поэтому делаем большой поворот
                     if (v == root) {
                         return root = big_right_rotation(v);
                     }
@@ -243,6 +334,7 @@ template<class ValueType> class Set {
                 }
             }
             root = nullptr;
+            most_left = nullptr;
         }
 
         Node* get_next(Node* v) const {
@@ -280,17 +372,6 @@ template<class ValueType> class Set {
             return v->parent;
         }
 
-        Node* get_most_left() const {
-            if (root == nullptr) {
-                return nullptr;
-            }
-            Node* v = root;
-            while (v->left != nullptr) {
-                v = v->left;
-            }
-            return v;
-        }
-
         Node* get_most_right() const {
             if (root == nullptr) {
                 return nullptr;
@@ -305,11 +386,13 @@ template<class ValueType> class Set {
     public:
         Set()
             : root(nullptr)
+            , most_left(nullptr)
         {}
 
         template<class Iterator>
         Set(Iterator first, Iterator last)
-            : root(nullptr) {
+            : root(nullptr)
+            , most_left(nullptr) {
             while (first != last) {
                 insert(*first);
                 ++first;
@@ -317,14 +400,16 @@ template<class ValueType> class Set {
         }
 
         Set(const std::initializer_list<const ValueType>& init)
-            : root(nullptr) {
+            : root(nullptr)
+            , most_left(nullptr) {
             for (const auto& elem : init) {
                 insert(elem);
             }
         }
 
         Set(const Set& other)
-            : root(nullptr) {
+            : root(nullptr)
+            , most_left(nullptr) {
             for (auto elem : other) {
                 insert(elem);
             }
@@ -347,11 +432,15 @@ template<class ValueType> class Set {
             Node* node = new Node(element);
             if (root == nullptr) {
                 root = node;
+                most_left = node;
                 return;
             }
             // находим вершину, если такой элемент уже есть, и предка, к которому надо будет подвесить вершину
             std::pair<Node*, Node*> place = find_(element);
-
+            // обновим most_left как указатель на наименьший элемент; так как set не пуст, то most_left != nulltpr.
+            if (element < most_left->value) {
+                most_left = node;
+            }
             if (place.first != nullptr) {
                 delete node;
                 return;
@@ -372,8 +461,8 @@ template<class ValueType> class Set {
                 // высота поддерева с корнем в v не изменилась. Тогда можно прекратить балансировку.
                 // Если баланс стал равен 1 или -1, то он был 0. Значит,
                 // одно поддерево стало выше другого, продолжаем балансировку.
-                // Если баланс стал равен 2 или -2, то надо сделать один из поворотов. 
-                // Тип поворота определяется внутри функции rebalance, 
+                // Если баланс стал равен 2 или -2, то надо сделать один из поворотов.
+                // Тип поворота определяется внутри функции rebalance,
                 // которая возвращает новый корень поддерева.
                 if (diff == 0) {
                     break;
@@ -396,14 +485,20 @@ template<class ValueType> class Set {
             if (v == nullptr) {
                 return;
             }
+            // обновим most_left, если удаляется именно он. Для этого вызовем get_next
+            // время работы асимптотически не ухудшится, так как  get_next работает тоже за логарифм.
+            if (v == most_left) {
+                most_left = get_next(v);
+            }
             // рекурсивное удаление : если лист, то удалим его,
-            // иначе найдем блидайший больший или меньший элемент
+            // иначе найдем ближайший больший или меньший элемент
             // и запустим удаление от него, поменяв его с удаляемым
             if (v->left == nullptr && v->right == nullptr) {
                 Node* p = v->parent;
                 // если в дереве была одна вершина
                 if (p == nullptr) {
                     root = nullptr;
+                    most_left = nullptr;
                     delete v;
                     return;
                 }
@@ -422,7 +517,7 @@ template<class ValueType> class Set {
                      // Если он стал равен 0, то был равен +1 или -1. Значит, размер поддерева v учменьшился, надо продолжать балансировку.
                      // Если баланс стал 2 или -2, то надо делать один из поворотов. Какой именно нужен - определяется внутри rebalance
                      // Сам rebalance вернет вершину, которая станет корнем поддерева.
-                     
+
                     if (get_diff(v) == 1 || get_diff(v) == -1) {
                         break;
                     }
@@ -471,7 +566,7 @@ template<class ValueType> class Set {
         class iterator;
 
         iterator begin() const {
-            return iterator(this, get_most_left());
+            return iterator(this, most_left);
         }
 
         iterator end() const {
